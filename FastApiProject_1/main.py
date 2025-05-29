@@ -1,9 +1,8 @@
 from fastapi import FastAPI
-from sqlmodel import SQLModel, Field, create_engine, select
+from sqlmodel import SQLModel, Field, select
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.orm import sessionmaker
-from typing import List
 from datetime import datetime
 from pydantic import BaseModel
 
