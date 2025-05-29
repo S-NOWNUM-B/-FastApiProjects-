@@ -9,6 +9,10 @@ from pydantic import BaseModel
 
 app = FastAPI()
 
+DATABASE_URL = "postgresql+asyncpg://postgres:123@localhost:5432/notesdb"
+engine = create_async_engine(DATABASE_URL, echo=True, future=True)
+async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+
 class Note(SQLModel, table=True):
     id: int | None = Field(default=None, primary_key=True)
     text: str
@@ -21,11 +25,6 @@ class NoteOut(BaseModel):
     id: int
     text: str
     created_at: datetime
-
-DATABASE_URL = "postgresql+asyncpg://postgres:123@localhost:5432/notesdb"
-
-engine = create_async_engine(DATABASE_URL, echo=True, future=True)
-async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 @app.on_event("startup")
 async def on_startup():
