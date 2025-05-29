@@ -3,3 +3,4 @@ uvicorn
 sqlmodel
 asyncpg
 greenlet
+psycopg2-binary
