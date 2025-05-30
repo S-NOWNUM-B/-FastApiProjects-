@@ -36,7 +36,6 @@ def create_db_and_tables():
 
 @app.on_event("startup")
 async def on_startup():
-    # Создаем таблицы синхронно один раз при старте
     create_db_and_tables()
 
 @app.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
