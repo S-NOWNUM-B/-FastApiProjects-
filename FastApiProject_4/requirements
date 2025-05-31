@@ -4,6 +4,6 @@ sqlmodel
 asyncpg
 greenlet
 psycopg2-binary
-passlib
+passlib[bcrypt]
 bcrypt
-python-jose\[cryptography\]
+"python-jose[cryptography]"
