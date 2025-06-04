@@ -1,40 +1,12 @@
 from fastapi import FastAPI, HTTPException, status
-from sqlmodel import SQLModel, Field, select
-from sqlmodel.ext.asyncio.session import AsyncSession
-from sqlalchemy.ext.asyncio import create_async_engine
-from sqlalchemy.orm import sessionmaker
-from pydantic import BaseModel
+from sqlmodel import select
+from models import User, UserCreate, UserLogin, UserRead
+from database import engine, async_session, create_db_and_tables
 from passlib.context import CryptContext
-from sqlalchemy import create_engine
 
 app = FastAPI()
 
-DATABASE_URL = "postgresql+asyncpg://postgres:123@localhost:5432/notesdb"
-engine = create_async_engine(DATABASE_URL, echo=True, future=True)
-async_session = sessionmaker(engine, expire_on_commit=False, class_=AsyncSession)
-
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
-class User(SQLModel, table=True):
-    id: int | None = Field(default=None, primary_key=True)
-    username: str = Field(index=True, unique=True)
-    hashed_password: str
-
-class UserCreate(BaseModel):
-    username: str
-    password: str
-
-class UserLogin(BaseModel):
-    username: str
-    password: str
-
-class UserRead(BaseModel):
-    id: int
-    username: str
-
-def create_db_and_tables():
-    sync_engine = create_engine("postgresql+psycopg2://postgres:123@localhost:5432/notesdb")
-    SQLModel.metadata.create_all(sync_engine)
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
