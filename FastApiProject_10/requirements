@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+sqlmodel
+asyncpg
+passlib[bcrypt]
+python-jose[cryptography]
+httpx
+pytest
+pytest-asyncio
+asgi-lifespan
