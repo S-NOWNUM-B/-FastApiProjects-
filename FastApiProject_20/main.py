@@ -1,8 +1,8 @@
 from fastapi import FastAPI, HTTPException, status, Depends
 from fastapi.staticfiles import StaticFiles
-from sqlmodel import select
+from sqlmodel import select, Session
 from models import User, UserCreate, UserLogin, UserRead
-from database import create_db_and_tables, async_session
+from database import create_db_and_tables, get_async_session_factory, engine
 from auth import get_password_hash, verify_password, create_access_token, get_current_user, require_role, get_user_by_username
 from routers import notes
 from routers.tasks import send_mock_email
@@ -12,6 +12,7 @@ from middleware import LoggingMiddleware, RateLimiterMiddleware
 from logger import logger
 from redis.asyncio import Redis
 from config import settings
+from typing import AsyncGenerator
 
 app = FastAPI(
     title="FastAPI Notes API",
@@ -36,10 +37,16 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 Instrumentator().instrument(app).expose(app)
 
+async_session_factory = get_async_session_factory()
+
+async def get_session() -> AsyncGenerator[Session, None]:
+    async with async_session_factory() as session:
+        yield session
+
 async def create_admin():
-    async with async_session() as session:
+    async with async_session_factory() as session:
         statement = select(User).where(User.username == "admin")
-        result = await session.execute(statement)
+        result = await session.exec(statement)
         admin = result.scalar_one_or_none()
         if not admin:
             admin_user = User(
@@ -51,11 +58,13 @@ async def create_admin():
             await session.commit()
             logger.info("Admin user created successfully")
 
-@app.on_event("startup")
-async def on_startup():
-    await create_db_and_tables()
-    await create_admin()
-    logger.info("Application started")
+app.add_event_handler("startup", create_db_and_tables)
+app.add_event_handler("startup", create_admin)
+app.add_event_handler("startup", lambda: logger.info("Application started"))
+
+async def shutdown_event():
+    await redis.aclose()
+    logger.info("Application shutdown")
 
 @app.get(
     "/health",
@@ -81,10 +90,9 @@ async def on_startup():
         }
     }
 )
-async def health_check():
+async def health_check(session: Session = Depends(get_session)):
     try:
-        async with async_session() as session:
-            await session.execute("SELECT 1")
+        await session.exec("SELECT 1")
         return {"status": "healthy"}
     except Exception as e:
         logger.error(f"Health check failed: {str(e)}")
@@ -112,20 +120,19 @@ async def health_check():
         }
     }
 )
-async def register(user: UserCreate):
-    async with async_session() as session:
-        existing_user = await get_user_by_username(session, user.username)
-        if existing_user:
-            logger.warning(f"Registration attempt with existing username: {user.username}")
-            raise HTTPException(status_code=400, detail="Username already registered")
+async def register(user: UserCreate, session: Session = Depends(get_session)):
+    existing_user = await get_user_by_username(session, user.username)
+    if existing_user:
+        logger.warning(f"Registration attempt with existing username: {user.username}")
+        raise HTTPException(status_code=400, detail="Username already registered")
 
-        hashed_password = get_password_hash(user.password)
-        new_user = User(username=user.username, hashed_password=hashed_password)
-        session.add(new_user)
-        await session.commit()
-        await session.refresh(new_user)
-        logger.info(f"New user registered: {user.username}")
-        return UserRead(id=new_user.id, username=new_user.username, role=new_user.role)
+    hashed_password = get_password_hash(user.password)
+    new_user = User(username=user.username, hashed_password=hashed_password)
+    session.add(new_user)
+    await session.commit()
+    await session.refresh(new_user)
+    logger.info(f"New user registered: {user.username}")
+    return UserRead(id=new_user.id, username=new_user.username, role=new_user.role)
 
 @app.post(
     "/login",
@@ -154,19 +161,18 @@ async def register(user: UserCreate):
         }
     }
 )
-async def login(user: UserLogin):
-    async with async_session() as session:
-        existing_user = await get_user_by_username(session, user.username)
-        if not existing_user or not verify_password(user.password, existing_user.hashed_password):
-            logger.warning(f"Failed login attempt for user: {user.username}")
-            raise HTTPException(status_code=401, detail="Incorrect username or password")
+async def login(user: UserLogin, session: Session = Depends(get_session)):
+    existing_user = await get_user_by_username(session, user.username)
+    if not existing_user or not verify_password(user.password, existing_user.hashed_password):
+        logger.warning(f"Failed login attempt for user: {user.username}")
+        raise HTTPException(status_code=401, detail="Incorrect username or password")
 
-        access_token = create_access_token(data={"sub": existing_user.username})
-        logger.info(f"User logged in successfully: {user.username}")
-        return {
-            "access_token": access_token,
-            "token_type": "bearer"
-        }
+    access_token = create_access_token(data={"sub": existing_user.username})
+    logger.info(f"User logged in successfully: {user.username}")
+    return {
+        "access_token": access_token,
+        "token_type": "bearer"
+    }
 
 @app.get(
     "/users/me",
@@ -228,13 +234,12 @@ async def read_users_me(current_user: User = Depends(get_current_user)):
         }
     }
 )
-async def get_all_users(current_user: User = Depends(require_role("admin"))):
-    async with async_session() as session:
-        statement = select(User)
-        result = await session.execute(statement)
-        users = result.scalars().all()
-        logger.info(f"Admin {current_user.username} accessed user list")
-        return [{"id": u.id, "username": u.username, "role": u.role} for u in users]
+async def get_all_users(current_user: User = Depends(require_role("admin")), session: Session = Depends(get_session)):
+    statement = select(User)
+    result = await session.exec(statement)
+    users = result.scalars().all()
+    logger.info(f"Admin {current_user.username} accessed user list")
+    return [UserRead(id=u.id, username=u.username, role=u.role) for u in users]
 
 @app.post(
     "/trigger-task",
@@ -248,7 +253,6 @@ async def get_all_users(current_user: User = Depends(require_role("admin"))):
                 "application/json": {
                     "example": {
                         "message": "Task started",
-                        "task_id": "123e4567-e89b-12d3-a456-426614174000"
                     }
                 }
             }
@@ -264,14 +268,8 @@ async def get_all_users(current_user: User = Depends(require_role("admin"))):
     }
 )
 async def trigger_task(current_user: User = Depends(get_current_user)):
-    task = send_mock_email.delay(current_user.username)
+    send_mock_email.delay(current_user.username)
     logger.info(f"Task triggered by user: {current_user.username}")
-    return {
-        "message": "Task started",
-        "task_id": task.id
-    }
+    return {"message": "Task started"}
 
-@app.on_event("shutdown")
-async def shutdown_event():
-    await redis.close()
-    logger.info("Application shutdown")
+app.add_event_handler("shutdown", shutdown_event)
