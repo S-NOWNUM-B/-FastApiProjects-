@@ -14,7 +14,7 @@ class Settings(BaseSettings):
     RATE_LIMIT_PREFIX: str = "ratelimit:"
 
     class Config:
-        env_file = ".env"
+        # env_file = ".env"
         env_file_encoding = "utf-8"
 
 settings = Settings() 
