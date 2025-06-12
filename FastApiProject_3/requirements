@@ -1,8 +1,0 @@
-fastapi
-uvicorn
-sqlmodel
-asyncpg
-greenlet
-psycopg2-binary
-passlib
-bcrypt
