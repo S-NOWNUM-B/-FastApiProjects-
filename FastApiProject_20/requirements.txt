@@ -18,4 +18,5 @@ httpx
 pytest
 pytest-asyncio
 asgi-lifespan
-celery>=5.3.4 
+celery>=5.3.4
+sqlmodel==0.0.16 
