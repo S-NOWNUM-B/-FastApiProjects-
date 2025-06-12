@@ -51,6 +51,7 @@ jobs:
         python -m pip install --upgrade pip
         pip install -r requirements.txt
         pip install pytest pytest-cov
+      working-directory: ./FastApiProject_20
 
     - name: Run tests
       env:
@@ -59,11 +60,13 @@ jobs:
         SECRET_KEY: test_secret_key
       run: |
         pytest --cov=. --cov-report=xml
+      working-directory: ./FastApiProject_20
 
     - name: Build Docker image
       run: |
         docker build -t ${{ env.DOCKER_IMAGE }}:${{ env.DOCKER_TAG }} .
         docker build -t ${{ env.DOCKER_IMAGE }}:latest .
+      working-directory: ./FastApiProject_20
 
   deploy:
     needs: build_and_test
